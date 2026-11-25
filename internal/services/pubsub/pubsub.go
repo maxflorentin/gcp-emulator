@@ -58,7 +58,14 @@ type Subscription struct {
 	AckDeadlineSeconds int               `json:"ackDeadlineSeconds,omitempty"`
 	Labels             map[string]string `json:"labels,omitempty"`
 	PushConfig         *PushConfig       `json:"pushConfig,omitempty"`
+
+	// MessageRetentionDuration defaults to 7 days on real Pub/Sub. The
+	// Terraform provider treats a missing value as drift, so it must be
+	// echoed back on every read.
+	MessageRetentionDuration string `json:"messageRetentionDuration,omitempty"`
 }
+
+const defaultMessageRetentionDuration = "604800s"
 
 // Message es el mensaje publicado, tal como lo devuelve la API (data en base64).
 type Message struct {
@@ -339,6 +346,8 @@ func (s *Service) createSubscription(w http.ResponseWriter, r *http.Request) {
 		AckDeadlineSeconds int               `json:"ackDeadlineSeconds"`
 		Labels             map[string]string `json:"labels"`
 		PushConfig         *PushConfig       `json:"pushConfig"`
+
+		MessageRetentionDuration string `json:"messageRetentionDuration"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		server.WriteError(w, 400, "INVALID_ARGUMENT", err.Error())
@@ -379,6 +388,10 @@ func (s *Service) createSubscription(w http.ResponseWriter, r *http.Request) {
 		AckDeadlineSeconds: ackDeadline,
 		Labels:             body.Labels,
 		PushConfig:         body.PushConfig,
+	}
+	sub.MessageRetentionDuration = body.MessageRetentionDuration
+	if sub.MessageRetentionDuration == "" {
+		sub.MessageRetentionDuration = defaultMessageRetentionDuration
 	}
 	if err := s.db.Put(bucketSubscriptions, sub.Name, sub); err != nil {
 		server.WriteError(w, 500, "INTERNAL", err.Error())

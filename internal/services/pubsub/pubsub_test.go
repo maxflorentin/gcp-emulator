@@ -254,3 +254,41 @@ func TestDuplicateCreateConflicts(t *testing.T) {
 		t.Fatalf("duplicate subscription: want 409, got %d", status)
 	}
 }
+
+// Regression: the Terraform google provider reports a perpetual diff on
+// google_pubsub_subscription when messageRetentionDuration is not returned
+// by the API (real Pub/Sub defaults it to 7 days).
+func TestSubscriptionMessageRetentionDurationDefault(t *testing.T) {
+	srv := newTestServer(t)
+
+	var topic Topic
+	if status := testutil.DoJSON(t, "PUT", srv.URL+"/v1/projects/proj1/topics/t", nil, &topic); status != 200 {
+		t.Fatalf("create topic: status=%d", status)
+	}
+
+	cases := []struct {
+		id   string
+		body map[string]any
+		want string
+	}{
+		{"default", map[string]any{"topic": topic.Name}, "604800s"},
+		{"explicit", map[string]any{"topic": topic.Name, "messageRetentionDuration": "86400s"}, "86400s"},
+	}
+	for _, c := range cases {
+		var sub Subscription
+		url := srv.URL + "/v1/projects/proj1/subscriptions/" + c.id
+		if status := testutil.DoJSON(t, "PUT", url, c.body, &sub); status != 200 {
+			t.Fatalf("%s: create status=%d", c.id, status)
+		}
+		if sub.MessageRetentionDuration != c.want {
+			t.Errorf("%s: create returned %q, want %q", c.id, sub.MessageRetentionDuration, c.want)
+		}
+		var got Subscription
+		if status := testutil.DoJSON(t, "GET", url, nil, &got); status != 200 {
+			t.Fatalf("%s: get status=%d", c.id, status)
+		}
+		if got.MessageRetentionDuration != c.want {
+			t.Errorf("%s: get returned %q, want %q", c.id, got.MessageRetentionDuration, c.want)
+		}
+	}
+}
